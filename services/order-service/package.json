@@ -1,0 +1,12 @@
+{
+  "name": "order-service",
+  "version": "1.0.0",
+  "description": "Microserviço de Pedidos",
+  "main": "index.js",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "morgan": "^1.10.0",
+    "node-fetch": "^2.7.0"
+  }
+}

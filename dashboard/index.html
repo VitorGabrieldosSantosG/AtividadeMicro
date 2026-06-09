@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atividade</title>
+  <meta name="description" content="Dashboard interativo para demonstração de arquitetura de microserviços com serviços de Usuários, Produtos, Pedidos e Pagamentos" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="main">
+
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Status dos Serviços</h2>
+        <button class="btn btn--sm" onclick="checkAllHealth()">Atualizar</button>
+      </div>
+      <div class="services-grid" id="services-grid">
+        <div class="service-card" id="card-gateway" data-service="gateway" data-port="3000" data-path="/health">
+          <div class="service-card__header">
+            <span class="service-card__icon"></span>
+            <div>
+              <h3 class="service-card__name">API Gateway</h3>
+              <span class="service-card__port">localhost:3000</span>
+            </div>
+            <span class="status-dot status-dot--checking" id="dot-gateway"></span>
+          </div>
+        </div>
+
+        <div class="service-card" id="card-users" data-service="users" data-port="3001" data-path="/health">
+          <div class="service-card__header">
+            <div>
+              <h3 class="service-card__name">User Service</h3>
+              <span class="service-card__port">localhost:3001</span>
+            </div>
+            <span class="status-dot status-dot--checking" id="dot-users"></span>
+          </div>
+          <div class="service-card__meta" id="meta-users">–</div>
+        </div>
+
+        <div class="service-card" id="card-products" data-service="products" data-port="3002" data-path="/health">
+          <div class="service-card__header">
+            <div>
+              <h3 class="service-card__name">Product Service</h3>
+              <span class="service-card__port">localhost:3002</span>
+            </div>
+            <span class="status-dot status-dot--checking" id="dot-products"></span>
+          </div>
+          <div class="service-card__meta" id="meta-products">–</div>
+        </div>
+
+        <div class="service-card" id="card-orders" data-service="orders" data-port="3003" data-path="/health">
+          <div class="service-card__header">
+            <div>
+              <h3 class="service-card__name">Order Service</h3>
+              <span class="service-card__port">localhost:3003</span>
+            </div>
+            <span class="status-dot status-dot--checking" id="dot-orders"></span>
+          </div>
+          <div class="service-card__meta" id="meta-orders">–</div>
+        </div>
+
+        <div class="service-card" id="card-payments" data-service="payments" data-port="3004" data-path="/health">
+          <div class="service-card__header">
+            <div>
+              <h3 class="service-card__name">Payment Service</h3>
+              <span class="service-card__port">localhost:3004</span>
+            </div>
+            <span class="status-dot status-dot--checking" id="dot-payments"></span>
+          </div>
+          <div class="service-card__meta" id="meta-payments">–</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- DEMONSTRAÇÃO -->
+    <section class="section">
+      <div class="section-header">
+        <h2 class="section-title">Demonstração</h2>
+      </div>
+
+      <div class="tabs">
+        <button class="tab tab--active" id="tab-users" onclick="switchTab('users')">Usuários</button>
+        <button class="tab" id="tab-products" onclick="switchTab('products')">Produtos</button>
+        <button class="tab" id="tab-orders" onclick="switchTab('orders')">Pedidos</button>
+        <button class="tab" id="tab-payments" onclick="switchTab('payments')">Pagamentos</button>
+      </div>
+
+      <!-- TAB: USUÁRIOS -->
+      <div class="tab-panel tab-panel--active" id="panel-users">
+        <div class="panel-grid">
+          <div class="panel-actions">
+            <h3 class="panel-title">Ações</h3>
+            <button class="btn btn--full" id="btn-list-users" onclick="listUsers()">Listar Usuários</button>
+            <div class="form-group">
+              <label class="form-label">Buscar por ID</label>
+              <div class="input-row">
+                <input class="form-input" id="user-id-input" type="number" placeholder="Ex: 1" min="1" />
+                <button class="btn" onclick="getUser()">Buscar</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Criar Usuário</label>
+              <input class="form-input" id="new-user-name" type="text" placeholder="Nome completo" />
+              <input class="form-input" id="new-user-email" type="email" placeholder="email@exemplo.com" />
+              <input class="form-input" id="new-user-phone" type="text" placeholder="Telefone (opcional)" />
+              <button class="btn btn--success btn--full" onclick="createUser()">Criar Usuário</button>
+            </div>
+          </div>
+          <div class="panel-result">
+            <div class="result-header">
+              <span class="result-title">Resposta da API</span>
+              <span class="result-url" id="result-url-users"></span>
+            </div>
+            <pre class="result-body" id="result-users">// Clique em uma ação para ver a resposta do serviço</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: PRODUTOS -->
+      <div class="tab-panel" id="panel-products">
+        <div class="panel-grid">
+          <div class="panel-actions">
+            <h3 class="panel-title">Ações</h3>
+            <button class="btn btn--full" onclick="listProducts()">Listar Produtos</button>
+            <button class="btn btn--full btn--ghost" onclick="listProducts('?disponivel=true')">Apenas Disponíveis</button>
+            <div class="form-group">
+              <label class="form-label">Buscar por ID</label>
+              <div class="input-row">
+                <input class="form-input" id="product-id-input" type="number" placeholder="Ex: 1" min="1" />
+                <button class="btn" onclick="getProduct()">Buscar</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Criar Produto</label>
+              <input class="form-input" id="new-product-name" type="text" placeholder="Nome do produto" />
+              <input class="form-input" id="new-product-price" type="number" placeholder="Preço (R$)" step="0.01" />
+              <input class="form-input" id="new-product-stock" type="number" placeholder="Estoque" min="0" />
+              <button class="btn btn--success btn--full" onclick="createProduct()">Criar Produto</button>
+            </div>
+          </div>
+          <div class="panel-result">
+            <div class="result-header">
+              <span class="result-title">Resposta da API</span>
+              <span class="result-url" id="result-url-products"></span>
+            </div>
+            <pre class="result-body" id="result-products">// Clique em uma ação para ver a resposta do serviço</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: PEDIDOS -->
+      <div class="tab-panel" id="panel-orders">
+        <div class="panel-grid">
+          <div class="panel-actions">
+            <h3 class="panel-title">Ações</h3>
+            <button class="btn btn--full" onclick="listOrders()">📋 Listar Pedidos</button>
+            <div class="form-group">
+              <label class="form-label">Buscar Pedido por ID</label>
+              <div class="input-row">
+                <input class="form-input" id="order-id-input" type="number" placeholder="Ex: 1" min="1" />
+                <button class="btn" onclick="getOrder()">Buscar</button>
+              </div>
+            </div>
+            <div class="form-group">
+              <label class="form-label">Criar Pedido</label>
+              <input class="form-input" id="order-user-id" type="number" placeholder="ID do Usuário" min="1" value="1" />
+              <input class="form-input" id="order-product-id" type="number" placeholder="ID do Produto" min="1" value="2" />
+              <input class="form-input" id="order-qty" type="number" placeholder="Quantidade" min="1" value="1" />
+              <button class="btn btn--success btn--full" onclick="createOrder()">Criar Pedido</button>
+            </div>
+          </div>
+          <div class="panel-result">
+            <div class="result-header">
+              <span class="result-title">Resposta da API</span>
+              <span class="result-url" id="result-url-orders"></span>
+            </div>
+            <pre class="result-body" id="result-orders">// Clique em uma ação para ver a resposta do serviço</pre>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB: PAGAMENTOS -->
+      <div class="tab-panel" id="panel-payments">
+        <div class="panel-grid">
+          <div class="panel-actions">
+            <h3 class="panel-title">Ações</h3>
+            <button class="btn btn--full" onclick="listPayments()">Listar Pagamentos</button>
+            <div class="form-group">
+              <label class="form-label">Processar Pagamento</label>
+              <input class="form-input" id="pay-order-id" type="number" placeholder="ID do Pedido" min="1" />
+              <input class="form-input" id="pay-valor" type="number" placeholder="Valor (R$)" step="0.01" />
+              <select class="form-input" id="pay-metodo">
+                <option value="cartao_credito">Cartão de Crédito</option>
+                <option value="cartao_debito">Cartão de Débito</option>
+                <option value="pix">PIX</option>
+                <option value="boleto">Boleto</option>
+              </select>
+              <button class="btn btn--success btn--full" onclick="processPayment()">Processar Pagamento</button>
+            </div>
+          </div>
+          <div class="panel-result">
+            <div class="result-header">
+              <span class="result-title">Resposta da API</span>
+              <span class="result-url" id="result-url-payments"></span>
+            </div>
+            <pre class="result-body" id="result-payments">// Clique em uma ação para ver a resposta do serviço</pre>
+          </div>
+        </div>
+      </div>
+      </div>
+    </section>
+  </main>
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

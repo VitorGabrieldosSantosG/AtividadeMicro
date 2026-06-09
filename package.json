@@ -1,0 +1,17 @@
+{
+  "name": "microservices-demo",
+  "version": "1.0.0",
+  "description": "Simulação de Arquitetura de Microserviços - Usuários, Produtos, Pedidos e Pagamentos",
+  "scripts": {
+    "install:all": "npm install && cd api-gateway && npm install && cd ../services/user-service && npm install && cd ../product-service && npm install && cd ../order-service && npm install && cd ../payment-service && npm install && cd ../../..",
+    "start": "concurrently --names \"GATEWAY,USERS,PRODUCTS,ORDERS,PAYMENTS\" --prefix-colors \"bgBlue,bgGreen,bgYellow,bgRed,bgMagenta\" \"npm run start:gateway\" \"npm run start:users\" \"npm run start:products\" \"npm run start:orders\" \"npm run start:payments\"",
+    "start:gateway": "node api-gateway/index.js",
+    "start:users": "node services/user-service/index.js",
+    "start:products": "node services/product-service/index.js",
+    "start:orders": "node services/order-service/index.js",
+    "start:payments": "node services/payment-service/index.js"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
