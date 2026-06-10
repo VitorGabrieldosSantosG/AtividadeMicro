@@ -28,6 +28,7 @@ Write-Host ""
 Write-Host "📦 Instalando dependências..." -ForegroundColor Yellow
 
 $services = @(
+    "$root\service-registry",
     "$root\api-gateway",
     "$root\services\user-service",
     "$root\services\product-service",
@@ -53,6 +54,13 @@ Write-Host ""
 Write-Host "🚀 Iniciando microserviços..." -ForegroundColor Yellow
 
 $processes = @()
+
+# Service Registry (deve iniciar ANTES dos demais serviços)
+$p0 = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\service-registry'; Write-Host '🗺️ SERVICE REGISTRY' -ForegroundColor Magenta; node index.js" -PassThru
+$processes += $p0
+Write-Host "  🗺️ Service Registry → http://localhost:3005" -ForegroundColor Magenta
+
+Start-Sleep -Milliseconds 800
 
 # API Gateway
 $p1 = Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\api-gateway'; Write-Host '🚀 API GATEWAY' -ForegroundColor Blue; node index.js" -PassThru
@@ -94,13 +102,15 @@ Write-Host "╔═════════════════════�
 Write-Host "║  ✅ TODOS OS SERVIÇOS INICIADOS!                         ║" -ForegroundColor Green
 Write-Host "╠══════════════════════════════════════════════════════════╣" -ForegroundColor Green
 Write-Host "║                                                          ║" -ForegroundColor Green
-Write-Host "║  📊 Dashboard: abra dashboard/index.html no navegador    ║" -ForegroundColor Green
+Write-Host "║  🗺️ Service Registry: http://localhost:3005              ║" -ForegroundColor Green
+Write-Host "║  📊 Dashboard: abra dashboard/index.html no navegador      ║" -ForegroundColor Green
 Write-Host "║                                                          ║" -ForegroundColor Green
 Write-Host "║  Endpoints via Gateway (porta 3000):                     ║" -ForegroundColor Green
 Write-Host "║    GET  http://localhost:3000/api/users                  ║" -ForegroundColor Green
 Write-Host "║    GET  http://localhost:3000/api/products               ║" -ForegroundColor Green
 Write-Host "║    GET  http://localhost:3000/api/orders                 ║" -ForegroundColor Green
 Write-Host "║    GET  http://localhost:3000/api/payments               ║" -ForegroundColor Green
+Write-Host "║    GET  http://localhost:3000/registry (todos registros) ║" -ForegroundColor Green
 Write-Host "║                                                          ║" -ForegroundColor Green
 Write-Host "╚══════════════════════════════════════════════════════════╝" -ForegroundColor Green
 Write-Host ""

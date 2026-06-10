@@ -5,20 +5,112 @@
 //  - Validação de dados de pagamento
 //  - Simulação de gateway de pagamento externo
 //  - Notifica Order Service sobre resultado do pagamento
+//
+// Service Discovery:
+//  - Se registra no Service Registry (porta 3005) ao iniciar
+//  - Envia heartbeat a cada 10s
+//  - Descobre endereço do Order Service dinamicamente
 
-// Padrão: Callback / Choreography
+// Padrão: Callback 
 
 
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const fetch = require('node-fetch');
+const http = require('http');
 
 const app = express();
 const PORT = 3004;
+const SERVICE_NAME    = 'payments';
+const REGISTRY_HOST   = 'localhost';
+const REGISTRY_PORT   = 3005;
+const HEARTBEAT_MS    = 10_000;
 
-//endereço de order
-const ORDER_SERVICE = 'http://localhost:3003';
+// Auto Registro
+function registryRequest(method, path, body = null) {
+  return new Promise((resolve) => {
+    const data = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: REGISTRY_HOST,
+      port:     REGISTRY_PORT,
+      path,
+      method,
+      headers: {
+        'Content-Type':   'application/json',
+        'Content-Length': data ? Buffer.byteLength(data) : 0,
+      },
+    };
+    const req = http.request(options, (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    });
+    req.on('error', () => resolve(null));
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+async function registerWithDiscovery() {
+  const status = await registryRequest('POST', '/register', {
+    name:    SERVICE_NAME,
+    host:    'localhost',
+    port:    PORT,
+    version: '1.0.0',
+    metadata: { type: 'financial', description: 'Processamento de pagamentos' },
+  });
+  if (status === 201) {
+    console.log(`[PAYMENT SERVICE]  Registrado no Service Registry (porta ${REGISTRY_PORT})`);
+  } else if (status === 200) {
+    console.log(`[PAYMENT SERVICE]  Re-registrado no Service Registry`);
+  } else {
+    console.warn(`[PAYMENT SERVICE]   Não foi possível registrar (status: ${status})`);
+  }
+}
+
+async function sendHeartbeat() {
+  const status = await registryRequest('PUT', `/heartbeat/${SERVICE_NAME}`);
+  if (!status) {
+    console.warn(`[PAYMENT SERVICE]   Heartbeat falhou — Registry indisponível`);
+  }
+}
+
+async function deregister() {
+  await registryRequest('DELETE', `/register/${SERVICE_NAME}`);
+  console.log(`[PAYMENT SERVICE]   Removido do Service Registry`);
+}
+
+process.on('SIGTERM', async () => { await deregister(); process.exit(0); });
+process.on('SIGINT',  async () => { await deregister(); process.exit(0); });
+
+// descobre endereço do Order Service
+
+const discoveryCache = {};
+const DISCOVERY_CACHE_TTL = 5_000;
+
+async function discoverService(name) {
+  const cached = discoveryCache[name];
+  if (cached && (Date.now() - cached.ts) < DISCOVERY_CACHE_TTL) {
+    return cached.url;
+  }
+  try {
+    const res  = await fetch(`http://${REGISTRY_HOST}:${REGISTRY_PORT}/services/${name}`);
+    if (!res.ok) return null;
+    const body = await res.json();
+    const url  = body.data?.url;
+    if (url) discoveryCache[name] = { url, ts: Date.now() };
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveOrderService() {
+  const url = await discoverService('orders');
+  if (url) return url;
+  console.warn(`[PAYMENT SERVICE]   Usando fallback para Order Service`);
+  return 'http://localhost:3003';
+}
 
 //banco
 let payments = [
@@ -67,8 +159,9 @@ function simularGatewayPagamento(metodo, valor, dadosCartao) {
 // Notifica pedido sobre resultado do pagamento
 async function notificarPedido(pedidoId, status) {
   try {
-    console.log(`[PAYMENT SERVICE] → Notificando Order Service: pedido #${pedidoId} → ${status}`);
-    await fetch(`${ORDER_SERVICE}/orders/${pedidoId}/status`, {
+    const orderUrl = await resolveOrderService();
+    console.log(`[PAYMENT SERVICE] → Notificando Order Service (${orderUrl}): pedido #${pedidoId} → ${status}`);
+    await fetch(`${orderUrl}/orders/${pedidoId}/status`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status }),
@@ -205,6 +298,10 @@ app.get('/relatorio/resumo', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Payment Service rodando na porta ${PORT}`);
+app.listen(PORT, async () => {
+  console.log(`[PAYMENT SERVICE] 💳 Payment Service rodando na porta ${PORT}`);
+  setTimeout(async () => {
+    await registerWithDiscovery();
+    setInterval(sendHeartbeat, HEARTBEAT_MS);
+  }, 1000);
 });

@@ -4,15 +4,82 @@
 //  - APENAS gerenciamento de produtos e estoque
 //  - CRUD de produtos
 //  - Controle de estoque (reserva e liberação)
+//
+// Service Discovery:
+//  - Se registra no Service Registry (porta 3005) ao iniciar
+//  - Envia heartbeat a cada 10s para manter status 'healthy'
+//  - Remove o registro ao encerrar (graceful deregistration)
 
 // Conector: HTTP/REST API
 
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const http = require('http');
 
 const app = express();
 const PORT = 3002;
+const SERVICE_NAME    = 'products';
+const REGISTRY_HOST   = 'localhost';
+const REGISTRY_PORT   = 3005;
+const HEARTBEAT_MS    = 10_000;
+
+// Auto registro no Service Registry
+function registryRequest(method, path, body = null) {
+  return new Promise((resolve) => {
+    const data = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: REGISTRY_HOST,
+      port:     REGISTRY_PORT,
+      path,
+      method,
+      headers: {
+        'Content-Type':   'application/json',
+        'Content-Length': data ? Buffer.byteLength(data) : 0,
+      },
+    };
+    const req = http.request(options, (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    });
+    req.on('error', () => resolve(null));
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+async function registerWithDiscovery() {
+  const status = await registryRequest('POST', '/register', {
+    name:    SERVICE_NAME,
+    host:    'localhost',
+    port:    PORT,
+    version: '1.0.0',
+    metadata: { type: 'core', description: 'Gerenciamento de produtos e estoque' },
+  });
+  if (status === 201) {
+    console.log(`[PRODUCT SERVICE]  Registrado no Service Registry (porta ${REGISTRY_PORT})`);
+  } else if (status === 200) {
+    console.log(`[PRODUCT SERVICE]  Re-registrado no Service Registry`);
+  } else {
+    console.warn(`[PRODUCT SERVICE]   Não foi possível registrar no Service Registry (status: ${status})`);
+  }
+}
+
+async function sendHeartbeat() {
+  const status = await registryRequest('PUT', `/heartbeat/${SERVICE_NAME}`);
+  if (!status) {
+    console.warn(`[PRODUCT SERVICE]   Heartbeat falhou — Registry indisponível`);
+  }
+}
+
+async function deregister() {
+  await registryRequest('DELETE', `/register/${SERVICE_NAME}`);
+  console.log(`[PRODUCT SERVICE]   Removido do Service Registry`);
+}
+
+// Encerramento gracioso
+process.on('SIGTERM', async () => { await deregister(); process.exit(0); });
+process.on('SIGINT',  async () => { await deregister(); process.exit(0); });
 
 //banco
 let products = [
@@ -222,6 +289,10 @@ app.delete('/products/:id', (req, res) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`Product Service rodando na porta ${PORT}`);
+app.listen(PORT, async () => {
+  console.log(`[PRODUCT SERVICE]  Product Service rodando na porta ${PORT}`);
+  setTimeout(async () => {
+    await registerWithDiscovery();
+    setInterval(sendHeartbeat, HEARTBEAT_MS);
+  }, 1000);
 });

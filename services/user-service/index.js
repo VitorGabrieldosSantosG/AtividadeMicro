@@ -4,13 +4,80 @@
 //  - APENAS gerenciamento de usuários
 //  - Criação, leitura, atualização e remoção de usuários
 //  - Validação de dados de usuário
+//
+// Service Discovery:
+//  - Se registra no Service Registry (porta 3005) ao iniciar
+//  - Envia heartbeat a cada 10s para manter status 'healthy'
+//  - Remove o registro ao encerrar (graceful deregistration)
 
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const http = require('http');
 
 const app = express();
 const PORT = 3001;
+const SERVICE_NAME    = 'users';
+const REGISTRY_HOST   = 'localhost';
+const REGISTRY_PORT   = 3005;
+const HEARTBEAT_MS    = 10_000;
+
+// Auto registro
+function registryRequest(method, path, body = null) {
+  return new Promise((resolve) => {
+    const data = body ? JSON.stringify(body) : null;
+    const options = {
+      hostname: REGISTRY_HOST,
+      port:     REGISTRY_PORT,
+      path,
+      method,
+      headers: {
+        'Content-Type':   'application/json',
+        'Content-Length': data ? Buffer.byteLength(data) : 0,
+      },
+    };
+    const req = http.request(options, (res) => {
+      res.resume();
+      resolve(res.statusCode);
+    });
+    req.on('error', () => resolve(null));
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
+async function registerWithDiscovery() {
+  const status = await registryRequest('POST', '/register', {
+    name:    SERVICE_NAME,
+    host:    'localhost',
+    port:    PORT,
+    version: '1.0.0',
+    metadata: { type: 'core', description: 'Gerenciamento de usuários' },
+  });
+  if (status === 201) {
+    console.log(`[USER SERVICE]  Registrado no Service Registry (porta ${REGISTRY_PORT})`);
+  } else if (status === 200) {
+    console.log(`[USER SERVICE]  Re-registrado no Service Registry`);
+  } else {
+    console.warn(`[USER SERVICE]   Não foi possível registrar no Service Registry (status: ${status})`);
+  }
+}
+
+async function sendHeartbeat() {
+  const status = await registryRequest('PUT', `/heartbeat/${SERVICE_NAME}`);
+  if (!status) {
+    console.warn(`[USER SERVICE]   Heartbeat falhou — Registry indisponível`);
+  }
+}
+
+async function deregister() {
+  await registryRequest('DELETE', `/register/${SERVICE_NAME}`);
+  console.log(`[USER SERVICE]   Removido do Service Registry`);
+}
+
+// Encerramento gracioso
+process.on('SIGTERM', async () => { await deregister(); process.exit(0); });
+process.on('SIGINT',  async () => { await deregister(); process.exit(0); });
 
 //banco
 let users = [
@@ -167,6 +234,12 @@ app.delete('/users/:id', (req, res) => {
 });
 
 
-app.listen(PORT, () => {
-  console.log(` User Service rodando na porta ${PORT}`);
+app.listen(PORT, async () => {
+  console.log(`[USER SERVICE]  User Service rodando na porta ${PORT}`);
+  // Aguarda um momento e registra no Service Registry
+  setTimeout(async () => {
+    await registerWithDiscovery();
+    // Inicia heartbeat periódico
+    setInterval(sendHeartbeat, HEARTBEAT_MS);
+  }, 1000);
 });

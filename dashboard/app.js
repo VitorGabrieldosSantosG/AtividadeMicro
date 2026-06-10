@@ -1,7 +1,9 @@
 //gateways
 const GATEWAY_URL = 'http://localhost:3000';
+const REGISTRY_URL = 'http://localhost:3005';
 const SERVICE_URLS = {
   gateway:  'http://localhost:3000',
+  registry: 'http://localhost:3005',
   users:    'http://localhost:3001',
   products: 'http://localhost:3002',
   orders:   'http://localhost:3003',
@@ -84,6 +86,7 @@ async function checkAllHealth() {
   showToast('Verificando todos os serviços...', 'info');
 
   const checks = [
+    checkServiceHealth('registry', 3005, '/health'),
     checkServiceHealth('gateway', 3000, '/health'),
     checkServiceHealth('users', 3001, '/health'),
     checkServiceHealth('products', 3002, '/health'),
@@ -93,7 +96,7 @@ async function checkAllHealth() {
 
   const results = await Promise.all(checks);
   const online = results.filter(Boolean).length;
-  showToast(`${online}/5 serviços online`, online === 5 ? 'success' : 'error');
+  showToast(`${online}/6 serviços online`, online === 6 ? 'success' : 'error');
 }
 
 function switchTab(tabName) {
@@ -102,6 +105,14 @@ function switchTab(tabName) {
 
   document.getElementById(`tab-${tabName}`).classList.add('tab--active');
   document.getElementById(`panel-${tabName}`).classList.add('tab-panel--active');
+
+  // Auto-carrega o registry ao entrar na aba
+  if (tabName === 'discovery') {
+    loadRegistry();
+    startAutoRefresh();
+  } else {
+    stopAutoRefresh();
+  }
 }
 
 // Ações do usuário
@@ -259,17 +270,6 @@ async function listPayments() {
   }
 }
 
-async function getPaymentReport() {
-  try {
-    const { data, url } = await apiCall('GET', '/api/payments/relatorio/resumo');
-    setResult('payments', url, data);
-    showToast('Relatório gerado!', 'success');
-  } catch (err) {
-    setResult('payments', '/api/payments/relatorio/resumo', { error: err.message }, true);
-    showToast('Falha ao conectar ao serviço', 'error');
-  }
-}
-
 async function processPayment() {
   const pedidoId = parseInt(document.getElementById('pay-order-id').value);
   const valor    = parseFloat(document.getElementById('pay-valor').value);
@@ -293,176 +293,107 @@ async function processPayment() {
   }
 }
 
-// ============================================================
-// FLUXO COMPLETO — Demonstração da comunicação entre serviços
-// ============================================================
-function addLog(message, type = '') {
-  const body = document.getElementById('flow-log-body');
-  const time = new Date().toLocaleTimeString('pt-BR', { hour12: false });
-  const line = document.createElement('span');
-  line.className = `log-line log-line--${type}`;
-  line.textContent = `[${time}] ${message}`;
-  body.appendChild(line);
-  body.appendChild(document.createTextNode('\n'));
-  body.scrollTop = body.scrollHeight;
+// não utilizado, mas mostra o status do registry e gateway 
+let autoRefreshInterval = null;
+let autoRefreshEnabled  = true;
+
+function startAutoRefresh() {
+  if (autoRefreshInterval) return;
+  autoRefreshInterval = setInterval(() => {
+    if (autoRefreshEnabled) loadRegistry();
+  }, 5000);
 }
 
-function setFlowStep(step, status) {
-  const stepEl = document.getElementById(`flow-step-${step}`);
-  const statusEl = document.getElementById(`flow-status-${step}`);
-
-  stepEl.className = `flow-step flow-step--${status}`;
-  if (status === 'running') statusEl.textContent = '⏳';
-  else if (status === 'success') statusEl.textContent = '';
-  else if (status === 'error') statusEl.textContent = '❌';
+function stopAutoRefresh() {  
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+    autoRefreshInterval = null;
+  }
 }
 
-async function runCompleteFlow() {
-  const usuarioId  = parseInt(document.getElementById('flow-user-id').value);
-  const produtoId  = parseInt(document.getElementById('flow-product-id').value);
-  const quantidade = parseInt(document.getElementById('flow-qty').value);
-  const metodo     = document.getElementById('flow-metodo').value;
-
-  const btn = document.getElementById('btn-run-flow');
-  btn.disabled = true;
-  btn.textContent = 'Executando...';
-
-  // Reset
-  const logBody = document.getElementById('flow-log-body');
-  logBody.innerHTML = '';
-  [1,2,3].forEach(i => setFlowStep(i, ''));
-  document.querySelectorAll('.flow-step').forEach(el => el.className = 'flow-step');
-
-  addLog('Iniciando fluxo completo de microserviços...', 'gateway');
-  addLog(`   Usuário: #${usuarioId} | Produto: #${produtoId} | Qty: ${quantidade} | Pagamento: ${metodo}`, '');
-
-  //Cria pedido
-  setFlowStep(1, 'running');
-  addLog('\n[PASSO 1] Cliente → API Gateway → Order Service', 'gateway');
-  await sleep(500);
-
-  addLog('   → Gateway recebe requisição e roteia para Order Service (:3003)', 'gateway');
-  await sleep(400);
-
-  addLog('   → Order Service valida dados e consulta User Service (:3001)', 'orders');
-  await sleep(400);
-
-  addLog('   → User Service retorna dados do usuário', 'users');
-  await sleep(300);
-
-  addLog('   → Order Service consulta Product Service (:3002)', 'orders');
-  await sleep(400);
-
-  addLog('   → Product Service verifica estoque e retorna dados do produto', 'products');
-  await sleep(300);
-
-  addLog('   → Order Service reserva estoque no Product Service', 'products');
-  await sleep(400);
-
-  let orderId = null;
-  let orderTotal = null;
-
-  try {
-    const { data, ok } = await apiCall('POST', '/api/orders', {
-      usuarioId,
-      itens: [{ produtoId, quantidade }],
-    });
-
-    if (ok) {
-      orderId = data.data.id;
-      orderTotal = data.data.total;
-      setFlowStep(1, 'success');
-      addLog(` Pedido #${orderId} criado com sucesso! Total: R$ ${orderTotal}`, 'success');
-    } else {
-      setFlowStep(1, 'error');
-      addLog(`Falha ao criar pedido: ${data.error || data.message}`, 'error');
-      return finishFlow(btn, false);
-    }
-  } catch (err) {
-    setFlowStep(1, 'error');
-    addLog(`Erro de conexão: ${err.message}`, 'error');
-    return finishFlow(btn, false);
-  }
-
-  await sleep(600);
-
-  //Processa pagamento
-  setFlowStep(2, 'running');
-  addLog('\n[PASSO 2] Cliente → API Gateway → Payment Service', 'gateway');
-  await sleep(400);
-
-  addLog(`   → Gateway roteia para Payment Service (:3004)`, 'gateway');
-  await sleep(300);
-
-  addLog(`   → Payment Service processa R$ ${orderTotal} via ${metodo}`, 'payments');
-  await sleep(500);
-
-  addLog('   → Enviando para gateway de pagamento externo (simulado)...', 'payments');
-  await sleep(600);
-
-  let paymentApproved = false;
-
-  try {
-    const { data, ok } = await apiCall('POST', '/api/payments', {
-      pedidoId: orderId,
-      valor: orderTotal,
-      metodo,
-    });
-
-    paymentApproved = ok;
-
-    if (ok) {
-      setFlowStep(2, 'success');
-      addLog(` Pagamento APROVADO! Transação: ${data.data.codigoTransacao}`, 'success');
-    } else {
-      setFlowStep(2, 'error');
-      addLog(`Pagamento RECUSADO: ${data.data?.motivoRecusa || data.message}`, 'error');
-    }
-  } catch (err) {
-    setFlowStep(2, 'error');
-    addLog(`Erro de conexão: ${err.message}`, 'error');
-  }
-
-  await sleep(600);
-
-  //Atualiza o status do pedido
-  setFlowStep(3, 'running');
-  addLog('\n🔄 [PASSO 3] Payment Service → Order Service (callback automático)', 'payments');
-  await sleep(400);
-
-  addLog('   → Payment Service notifica Order Service sobre resultado', 'payments');
-  await sleep(300);
-
-  if (paymentApproved) {
-    addLog(`   → Order Service atualiza pedido #${orderId} → status: "pago"`, 'orders');
-    await sleep(400);
-    setFlowStep(3, 'success');
-    addLog(' Pedido atualizado automaticamente pelo callback!', 'success');
+function toggleAutoRefresh() {
+  autoRefreshEnabled = !autoRefreshEnabled;
+  const label  = document.getElementById('discovery-auto-label');
+  const btn    = document.getElementById('btn-toggle-auto');
+  if (autoRefreshEnabled) {
+    label.textContent = 'Auto-refresh: ON';
+    btn.textContent   = 'Pausar';
+    loadRegistry();
   } else {
-    addLog(`   → Order Service mantém pedido #${orderId} como "pendente"`, 'orders');
-    await sleep(400);
-    setFlowStep(3, 'error');
-    addLog('Pedido aguardando nova tentativa de pagamento', 'error');
+    label.textContent = 'Auto-refresh: OFF';
+    btn.textContent   = 'Retomar';
   }
-
-  await sleep(400);
-  addLog('\n════════════════════════════════════════════', '');
-  addLog(paymentApproved
-    ? 'FLUXO COMPLETO CONCLUÍDO COM SUCESSO!'
-    : ' Fluxo concluído com falha no pagamento. Pedido aguardando.',
-    paymentApproved ? 'success' : 'error');
-  addLog('════════════════════════════════════════════', '');
-
-  finishFlow(btn, paymentApproved);
-  showToast(
-    paymentApproved ? 'Fluxo completo executado com sucesso!' : ' Fluxo executado (pagamento recusado)',
-    paymentApproved ? 'success' : 'error'
-  );
 }
 
-function finishFlow(btn, success) {
-  btn.disabled = false;
-  btn.textContent = success ? '🔄 Executar Novamente' : '🔄 Tentar Novamente';
+function formatUptime(registeredAtIso) {
+  const seconds = Math.floor((Date.now() - new Date(registeredAtIso).getTime()) / 1000);
+  if (seconds < 60)  return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
+
+function renderRegistryEntry(svc) {
+  const isHealthy = svc.status === 'healthy';
+  const icon = { users: '', products: '', orders: '', payments: '' }[svc.name] || '🔧';
+  const sinceMs = svc.secondsSinceHeartbeat;
+  const ttl = 15;
+  const pct = Math.min(100, Math.round((sinceMs / ttl) * 100));
+
+  return `
+    <div class="registry-entry registry-entry--${svc.status}">
+      <div class="registry-entry__header">
+        <span class="registry-entry__icon">${icon}</span>
+        <div class="registry-entry__info">
+          <span class="registry-entry__name">${svc.name}</span>
+          <span class="registry-entry__url">${svc.url}</span>
+        </div>
+        <span class="registry-badge registry-badge--${svc.status}">
+          ${isHealthy ? ' healthy' : ' expired'}
+        </span>
+      </div>
+      <div class="registry-entry__meta">
+        <span> Registrado: ${new Date(svc.registeredAt).toLocaleTimeString('pt-BR')}</span>
+        <span> Úoltimo heartbeat: ${sinceMs}s atrás</span>
+        <span> Uptime: ${formatUptime(svc.registeredAt)}</span>
+        <span>v${svc.version}</span>
+      </div>
+      <div class="registry-entry__ttl">
+        <div class="ttl-bar">
+          <div class="ttl-bar__fill ttl-bar__fill--${svc.status}" style="width: ${isHealthy ? pct : 100}%"></div>
+        </div>
+        <span class="ttl-bar__label">TTL: ${sinceMs}s / ${ttl}s</span>
+      </div>
+    </div>
+  `;
+}
+
+// Carrega serviços registrados no Service Registry
+async function loadRegistry() {
+  const list = document.getElementById('registry-list');
+  try {
+    const res  = await fetch(`${REGISTRY_URL}/services`, { signal: AbortSignal.timeout(3000) });
+    const data = await res.json();
+    const services = data.data || [];
+
+    // Atualiza stats
+    document.getElementById('stat-total').textContent   = data.total ?? 0;
+    document.getElementById('stat-healthy').textContent = data.totalHealthy ?? 0;
+    document.getElementById('stat-expired').textContent = data.totalExpired ?? 0;
+
+    if (services.length === 0) {
+      list.innerHTML = '<div class="registry-empty"> Nenhum serviço registrado. Inicie os microserviços.</div>';
+    } else {
+      list.innerHTML = services.map(renderRegistryEntry).join('');
+    }
+
+    const now = new Date().toLocaleTimeString('pt-BR');
+    document.getElementById('discovery-last-update').textContent = `Última atualização: ${now}`;
+  } catch (err) {
+    list.innerHTML = `<div class="registry-empty registry-empty--error"> Service Registry indisponível (porta 3005)<br><small>${err.message}</small></div>`;
+    document.getElementById('stat-total').textContent   = '–';
+    document.getElementById('stat-healthy').textContent = '–';
+    document.getElementById('stat-expired').textContent = '–';
+  }
 }
 
 function sleep(ms) {
